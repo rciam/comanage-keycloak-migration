@@ -1,0 +1,21 @@
+spring.shell.interactive.enabled: true
+
+keycloak:
+  url: http://localhost:8088/admin/realms/egi
+  client-id: migration
+  client-secret: YX6HDJblAAqysFf3FIUnN8UfaVFOxzaF
+  egi-check-in-url: https://aai-dev.egi.eu/
+  excluded-alias:
+    - "https://aai.egi.eu/d4science/saml2/idp/metadata.php"
+    - "https://proxy.eduteams.org/proxy"
+    - "https://proxy.umbrellaid.org/proxy"
+    - "https://proxy.sram.surf.nl/proxy"
+    - "https://aai.egi.eu/deep/saml2/idp/metadata.php"
+    - "https://login.elixir-czech.org/idp/"
+    - "https://b2access.eudat.eu:8443/saml-idp/metadata"
+
+logging:
+  file:
+    name: C:/old_E/keycloak-comanage-migration.log
+  level:
+    root: INFO

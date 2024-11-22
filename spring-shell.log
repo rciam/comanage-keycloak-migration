@@ -1,0 +1,30 @@
+1731490551498:help
+1731490693250:create-users
+1731490743692:exit
+1731490771574:help
+1731490775822:create-users
+1732193166815:help
+1732193476840:create-users jsonFilePath="C:/Users/cgeorgilakis/OneDrive - GRNET S.A/eggrafa/keycloak/egi_migration/users.json"
+1732193560832:create-users jsonFilePath="C:/old_E/users.json"
+1732193590122:help create-users
+1732193625287:create-users --jsonFilePath=C:/Users/cgeorgilakis/OneDrive - GRNET S.A/eggrafa/keycloak/egi_migration/users.json
+1732193638253:create-users --jsonFilePath="C:/Users/cgeorgilakis/OneDrive - GRNET S.A/eggrafa/keycloak/egi_migration/users.json"
+1732193719722:create-users --jsonFilePath "C:/Users/cgeorgilakis/OneDrive - GRNET S.A/eggrafa/keycloak/egi_migration/users.json"
+1732193774339:help create-users
+1732193850784:create-users
+1732193881235:create-users --jsonFilePath C:/old_Eusers.json
+1732193982098:create-users --jsonFilePath C:/old_E/users.json
+1732194335048:exit
+1732194497228:stacktrace
+1732195362381:create-users --jsonFilePath C:/old_E/users.json
+1732195375582:stacktrace
+1732195809472:create-users --jsonFilePath C:/old_E/users.json
+1732195859134:SpringApplication.run(ComanageToKeycloakMigrationApplication.class, args);
+1732195864790:create-users --jsonFilePath C:/old_E/users.json
+1732195888934:stacktrace
+1732196362952:shell:>
+1732197845342:create-users --jsonFilePath C:/old_E/users_little.json
+1732198322959:create-users --jsonFilePath C:/old_E/users.json
+1732276348410:exit
+1732281983274:create-users --jsonFilePath C:/old_E/users_little.json
+1732282183247:create-users --jsonFilePath C:/old_E/users.json
