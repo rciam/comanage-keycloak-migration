@@ -58,6 +58,10 @@
 			<artifactId>keycloak-core</artifactId>
 			<version>${keycloak.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+		</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>

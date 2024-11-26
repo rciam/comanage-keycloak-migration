@@ -1,0 +1,3 @@
+keycloak:
+  url: https://aai.egi.eu/auth/realms/id
+  client-secret: x

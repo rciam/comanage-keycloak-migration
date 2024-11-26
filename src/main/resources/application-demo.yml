@@ -1,0 +1,13 @@
+keycloak:
+  url: https://aai-demo.egi.eu/auth/realms/id
+  client-secret: x
+  egi-check-in-url: https://aai-demo.egi.eu/
+  excluded-alias:
+    - "https://aai-demo.egi.eu/d4science/saml2/idp/metadata.php"
+    - "https://proxy.acc.umbrellaid.org/proxy"
+    - "https://proxy.acc.eduteams.org/proxy"
+    - "https://proxy.sram.surf.nl/proxy"
+    - "https://aai-demo.egi.eu/deep/saml2/idp/metadata.php"
+    - "https://login.elixir-czech.org/idp/"
+    - "https://b2access-integration.fz-juelich.de/saml-idp/metadata"
+    - "https://aai-demo.egi.eu/oauth/saml2/idp/metadata.php"

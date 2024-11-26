@@ -1,0 +1,15 @@
+keycloak:
+  url: https://aai-dev.egi.eu/auth/realms/id
+  client-id: migration
+  client-secret: Jl1QMfYFImvHsyDm8IW9r1rVBTTbSU8q
+  egi-check-in-url: https://aai-dev.egi.eu/
+  excluded-alias:
+    - "https://aai-dev.egi.eu/d4science/saml2/idp/metadata.php"
+    - "https://proxy.acc.eduteams.org/proxy"
+    - "https://aai-dev.egi.eu/deep/saml2/idp/metadata.php"
+    - "https://login.elixir-czech.org/idp/"
+    - "https://b2access-integration.fz-juelich.de/saml-idp/metadata"
+    - "https://aai-dev.egi.eu/oauth/saml2/idp/metadata.php"
+
+logging.file:
+    name: C:/old_E/egi-dev-comanage-migration.log
