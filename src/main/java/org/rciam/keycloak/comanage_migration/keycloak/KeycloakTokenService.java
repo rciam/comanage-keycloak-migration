@@ -10,8 +10,10 @@ import java.util.Base64;
 @Component
 public class KeycloakTokenService {
 
+    private static final String TOKEN_URL = "/protocol/openid-connect/token";
+
     public String getToken(String keycloakUrl, String clientId, String clientSecret) {
-        return WebClient.builder().baseUrl(keycloakUrl.replace("/admin","") + "/protocol/openid-connect/token").build().post()
+        return WebClient.builder().baseUrl(keycloakUrl + TOKEN_URL).build().post()
                 .header("Authorization", "Basic " + Base64.getEncoder().encodeToString((clientId + ":" + clientSecret).getBytes()))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(BodyInserters.fromFormData("grant_type", "client_credentials"))

@@ -24,7 +24,7 @@ public class ComanageUserRepresentation {
     private boolean enabled;
     private String uid;
     private List<String> sshPublicKeys;
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = Utils.DATE_FORMAT)
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = Utils.DATE_TIME_FORMAT)
     @JsonSerialize(using = LocalDateTimeSerializer.class)
     @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime terms_and_conditions;

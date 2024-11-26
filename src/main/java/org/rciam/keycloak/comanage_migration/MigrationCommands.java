@@ -28,11 +28,21 @@ public class MigrationCommands {
             @ShellOption (defaultValue = ShellOption.NULL, help = "clientSecret for getting token with clients credentials") String clientSecret,
             @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
 
-        String effectiveKeycloakUrl = keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl();
-
-        keycloakAdminService.processUsersFromFile(jsonFilePath, effectiveKeycloakUrl, 
+        keycloakAdminService.processUsersFromFile(jsonFilePath, keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl(),
             clientId != null ? clientId : keycloakConfig.getClientId(), 
             clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
+    }
+
+    @ShellMethod("Create groups and related configuration in Keycloak from JSON file")
+    public void createGroups(
+            @ShellOption (defaultValue = ShellOption.NULL, help = "Keycloak admin REST API") String keycloakUrl,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientId for getting token with clients credentials") String clientId,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientSecret for getting token with clients credentials") String clientSecret,
+            @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
+
+        keycloakAdminService.processGroupsFromFile(jsonFilePath, keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl(),
+                clientId != null ? clientId : keycloakConfig.getClientId(),
+                clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
     }
 }
 
