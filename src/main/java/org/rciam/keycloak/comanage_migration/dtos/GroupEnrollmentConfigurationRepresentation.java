@@ -15,6 +15,8 @@ public class GroupEnrollmentConfigurationRepresentation {
     private String name;
     private Boolean active;
     private Boolean requireApproval;
+
+    private Boolean requireApprovalForExtension;
     @JsonFormat(shape=JsonFormat.Shape.STRING, pattern= Utils.DATE_FORMAT)
     @JsonSerialize(using = LocalDateSerializer.class)
     @JsonDeserialize(using = LocalDateDeserializer.class)
@@ -69,6 +71,13 @@ public class GroupEnrollmentConfigurationRepresentation {
         this.requireApproval = requireApproval;
     }
 
+    public Boolean getRequireApprovalForExtension() {
+        return requireApprovalForExtension;
+    }
+
+    public void setRequireApprovalForExtension(Boolean requireApprovalForExtension) {
+        this.requireApprovalForExtension = requireApprovalForExtension;
+    }
     public Long getMembershipExpirationDays() {
         return membershipExpirationDays;
     }
