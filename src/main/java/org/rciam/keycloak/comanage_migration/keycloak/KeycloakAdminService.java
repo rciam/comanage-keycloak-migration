@@ -8,6 +8,7 @@ import org.rciam.keycloak.comanage_migration.comanage.ComanageGroupRepresentatio
 import org.rciam.keycloak.comanage_migration.comanage.ComanageUserRepresentation;
 import org.rciam.keycloak.comanage_migration.common.ConvertFromComanageToKeycloak;
 import org.rciam.keycloak.comanage_migration.config.KeycloakConfig;
+import org.rciam.keycloak.comanage_migration.dtos.GroupAupRepresentation;
 import org.rciam.keycloak.comanage_migration.dtos.GroupEnrollmentConfigurationRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +34,11 @@ public class KeycloakAdminService {
     private final ConvertFromComanageToKeycloak converter;
     private final KeycloakConfig keycloakConfig;
 
+    private static final String AUTHORIZATION = "Authorization";
+    private static final String CONTENT_TYPE = "Content-Type";
+    private static final String APPLICATION_JSON = "application/json";
+    private static final String REALMS = "/realms";
+    private static final String ADMIN_REALMS = "/admin/realms";
     private static final String USERS = "/users";
     private static final String GROUPS = "/groups";
     private static final String CHILDREN = "/children";
@@ -41,6 +47,7 @@ public class KeycloakAdminService {
     private static final String CONFIGURATION = "/configuration";
     private static final String DEFAULT_CONFIGURATION = "/default-configuration";
     private static final String DEFAULT_TOPLEVEL_ROLE = "vm_operator";
+    public static final String DEFAULT_CONFIGURATION_NAME = "defaultConfiguration";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -66,7 +73,7 @@ public class KeycloakAdminService {
 
     private void createUpdateUser(String keycloakUrl, ComanageUserRepresentation comanageUser, String token) {
         try {
-            keycloakUrl = keycloakUrl.replace("/realms", "/admin/realms");
+            keycloakUrl = keycloakUrl.replace(REALMS, ADMIN_REALMS);
             // First check if user exists
             List<UserRepresentation> existingUsers = WebClient.builder()
                     .baseUrl(keycloakUrl + USERS)
@@ -76,7 +83,7 @@ public class KeycloakAdminService {
                             .queryParam("username", comanageUser.getUsername())
                             .queryParam("exact", true)
                             .build())
-                    .header("Authorization", "Bearer " + token)
+                    .header(AUTHORIZATION, "Bearer " + token)
                     .retrieve().bodyToMono(new ParameterizedTypeReference<List<UserRepresentation>>() {
                     })
                     .block();
@@ -93,8 +100,8 @@ public class KeycloakAdminService {
                         .baseUrl(keycloakUrl + USERS + "/" + user.getId())
                         .build()
                         .put()
-                        .header("Authorization", "Bearer " + token)
-                        .header("Content-Type", "application/json")
+                        .header(AUTHORIZATION, "Bearer " + token)
+                        .header(CONTENT_TYPE, APPLICATION_JSON)
                         .bodyValue(user);
             } else {
                 // Create new user
@@ -102,8 +109,8 @@ public class KeycloakAdminService {
                         .baseUrl(keycloakUrl + USERS)
                         .build()
                         .post()
-                        .header("Authorization", "Bearer " + token)
-                        .header("Content-Type", "application/json")
+                        .header(AUTHORIZATION, "Bearer " + token)
+                        .header(CONTENT_TYPE, APPLICATION_JSON)
                         .bodyValue(user);
             }
 
@@ -145,133 +152,203 @@ public class KeycloakAdminService {
     }
 
     private void createGroupAndEnrollment(String keycloakUrl, ComanageGroupRepresentation comanageGroup, String token) {
-        List<GroupRepresentation> existingGroups = getGroupByName(keycloakUrl, comanageGroup.getName(), token);
-        if (existingGroups.isEmpty()) {
-            try {
-                String groupId = createGroup(keycloakUrl, comanageGroup, token);
+        List<GroupRepresentation> existingGroups = getGroupByName(keycloakUrl, comanageGroup.getName(), token, false);
+        try {
+            if (existingGroups.isEmpty()) {
+                    String groupId = createGroup(keycloakUrl, comanageGroup, token);
 
-                //create group role and default enrollment configuration
+                    //create group role and default enrollment configuration
 
-                GroupEnrollmentConfigurationRepresentation configuration = comanageGroup.getEnrollmentConfigurationList() == null || comanageGroup.getEnrollmentConfigurationList().isEmpty() ? new GroupEnrollmentConfigurationRepresentation() : comanageGroup.getEnrollmentConfigurationList().get(0);
-                List<String> roles = new ArrayList<>();
-                if (comanageGroup.getEnrollmentConfigurationList() == null || comanageGroup.getEnrollmentConfigurationList().isEmpty()) {
-                    //create default enrollment configuration
-                    configuration.setName("Join " + comanageGroup.getName());
-                    configuration.setRequireApproval(Boolean.TRUE);
-                    configuration.setRequireApprovalForExtension(Boolean.TRUE);
-                    configuration.setActive(Boolean.TRUE);
-                    configuration.setVisibleToNotMembers(Boolean.FALSE);
-                    configuration.setMultiselectRole(Boolean.TRUE);
-                    roles.addAll(Stream.of("member").toList());
-                    configuration.setCommentsNeeded(Boolean.TRUE);
-                    configuration.setCommentsLabel("Comments");
-                    configuration.setCommentsDescription("Why do you want to join the group?");
-                    configuration.setMembershipExpirationDays(comanageGroup.getParentName() != null ? null : Long.valueOf(365));
-                } else {
-                    configuration.setMultiselectRole(Boolean.TRUE);
-                    configuration.setActive(Boolean.TRUE);
-                    configuration.setRequireApprovalForExtension(Boolean.TRUE);
-                    roles.addAll(configuration.getGroupRoles());
-                    if (configuration.getAup() != null) {
-                        configuration.getAup().setType("URL");
+                    GroupEnrollmentConfigurationRepresentation configuration = comanageGroup.getEnrollmentConfigurationList() == null || comanageGroup.getEnrollmentConfigurationList().isEmpty() ? new GroupEnrollmentConfigurationRepresentation() : comanageGroup.getEnrollmentConfigurationList().get(0);
+                    List<String> roles = new ArrayList<>();
+                    if (comanageGroup.getEnrollmentConfigurationList() == null || comanageGroup.getEnrollmentConfigurationList().isEmpty()) {
+                        //create default enrollment configuration
+                        configuration.setName("Join " + comanageGroup.getName());
+                        configuration.setRequireApproval(Boolean.TRUE);
+                        configuration.setRequireApprovalForExtension(Boolean.TRUE);
+                        configuration.setActive(Boolean.TRUE);
+                        configuration.setVisibleToNotMembers(Boolean.FALSE);
+                        configuration.setMultiselectRole(Boolean.TRUE);
+                        roles.addAll(Stream.of("member").toList());
+                        configuration.setCommentsNeeded(Boolean.TRUE);
+                        configuration.setCommentsLabel("Comments");
+                        configuration.setCommentsDescription("Why do you want to join the group?");
+                        configuration.setMembershipExpirationDays(comanageGroup.getParentName() != null ? null : Long.valueOf(365));
+                    } else {
+                        configuration.setMultiselectRole(Boolean.TRUE);
+                        configuration.setActive(Boolean.TRUE);
+                        configuration.setRequireApprovalForExtension(Boolean.TRUE);
+                        roles.addAll(configuration.getGroupRoles());
+                        if (configuration.getAup() != null) {
+                            configuration.getAup().setType("URL");
+                        }
                     }
-                }
 
-                if (comanageGroup.getParentName() == null) {
-                    roles.add(DEFAULT_TOPLEVEL_ROLE);
-                }
-                configuration.setGroupRoles(roles);
+                    if (comanageGroup.getParentName() == null) {
+                        roles.add(DEFAULT_TOPLEVEL_ROLE);
+                    }
+                    configuration.setGroupRoles(roles);
 
-                roles.stream().forEach(role -> {
+                    roles.stream().forEach(role ->
+                        WebClient.builder()
+                                .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + ROLES)
+                                .build()
+                                .post()
+                                .uri(uriBuilder -> uriBuilder
+                                        .queryParam("name", role)
+                                        .build())
+                                .header(AUTHORIZATION, "Bearer " + token)
+                                .header(CONTENT_TYPE, APPLICATION_JSON)
+                                .retrieve()
+                                .toBodilessEntity()
+                                .doOnSuccess(response -> {
+                                    if (!response.getStatusCode().is2xxSuccessful()) {
+                                        logger.error("Failed to create group role with name {}: {}",
+                                                role,
+                                                response.getBody());
+                                        throw new RuntimeException("Problem creating role");
+                                    }
+                                })
+                                .doOnError(error -> {
+                                    logger.error("Failed to create group role with name {}: {}",
+                                            role,
+                                            error.getMessage());
+                                    throw new RuntimeException("Problem creating role");
+                                })
+                                .block()
+                    );
+
                     WebClient.builder()
-                            .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + ROLES)
+                            .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + CONFIGURATION)
+                            .build()
+                            .post()
+                            .header(AUTHORIZATION, "Bearer " + token)
+                            .header(CONTENT_TYPE, APPLICATION_JSON)
+                            .bodyValue(configuration).retrieve()
+                            .toBodilessEntity()
+                            .doOnSuccess(response -> {
+                                if (response.getStatusCode().is2xxSuccessful()) {
+                                    configuration.setId(StringUtils.substringAfter(response.getHeaders().getLocation().toString(), "configuration/"));
+                                } else {
+                                    logger.error("Failed to create group enrollment configuration with name {} for group {}: {}",
+                                            configuration.getName(),
+                                            comanageGroup.getName(),
+                                            response.getBody());
+                                    throw new RuntimeException("Problem creating group enrollment configuration");
+                                }
+                            })
+                            .doOnError(error -> {
+                                logger.error("Failed to create group enrollment configuration with name {} for group {}: {}",
+                                        configuration.getName(),
+                                        comanageGroup.getName(),
+                                        error.getMessage());
+                                throw new RuntimeException("Problem creating group enrollment configuration");
+                            })
+                            .block();
+
+                    WebClient.builder()
+                            .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + DEFAULT_CONFIGURATION)
                             .build()
                             .post()
                             .uri(uriBuilder -> uriBuilder
-                                    .queryParam("name", role)
+                                    .queryParam("configurationId", configuration.getId())
                                     .build())
-                            .header("Authorization", "Bearer " + token)
-                            .header("Content-Type", "application/json")                            
+                            .header(AUTHORIZATION, "Bearer " + token)
+                            .header(CONTENT_TYPE, APPLICATION_JSON)
                             .retrieve()
                             .toBodilessEntity()
                             .doOnSuccess(response -> {
                                 if (!response.getStatusCode().is2xxSuccessful()) {
-                                    logger.error("Failed to create group role with name {}: {}",
-                                            role,
+                                    logger.error("Failed to create default group enrollment configuration for group {}: {}",
+                                            comanageGroup.getName(),
                                             response.getBody());
-                                    throw new RuntimeException("Problem creating role");
+                                    throw new RuntimeException("Problem adding default group enrollment configuration");
                                 }
                             })
                             .doOnError(error -> {
-                                logger.error("Failed to create group role with name {}: {}",
-                                        role,
+                                logger.error("Failed to create default group enrollment configuration for group {}: {}",
+                                        comanageGroup.getName(),
                                         error.getMessage());
-                                throw new RuntimeException("Problem creating role");
+                                throw new RuntimeException("Problem adding default group enrollment configuration");
                             })
                             .block();
-                });
+
+                logger.info("Group with name {} together with all related entities has been created",
+                        comanageGroup.getName());
+
+            } else if (comanageGroup.getEnrollmentConfigurationList() != null && !comanageGroup.getEnrollmentConfigurationList().isEmpty()) {
+                //try to default update enrollment configuration
+
+                String configurationId = existingGroups.get(0).getAttributes().get(DEFAULT_CONFIGURATION_NAME).get(0);
+
+                GroupEnrollmentConfigurationRepresentation configuration = WebClient.builder()
+                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + existingGroups.get(0).getId() + CONFIGURATION + "/" + configurationId)
+                        .build()
+                        .get()
+                        .header(AUTHORIZATION, "Bearer " + token)
+                        .retrieve().bodyToMono(GroupEnrollmentConfigurationRepresentation.class)
+                        .block();
+
+                if (configuration == null) {
+                    throw new RuntimeException("Default configuration for this existing group does not exist");
+                }
+
+                GroupEnrollmentConfigurationRepresentation comanageConfiguration = comanageGroup.getEnrollmentConfigurationList().get(0);
+                configuration.setName(comanageConfiguration.getName());
+                configuration.setRequireApproval(comanageConfiguration.getRequireApproval());
+                configuration.setVisibleToNotMembers(comanageConfiguration.isVisibleToNotMembers());
+                configuration.setCommentsNeeded(comanageConfiguration.getCommentsNeeded());
+                configuration.setCommentsLabel(comanageConfiguration.getCommentsLabel());
+                configuration.setCommentsDescription(comanageConfiguration.getCommentsDescription());
+                configuration.setMembershipExpirationDays(comanageConfiguration.getMembershipExpirationDays());
+                List<String> roles = new ArrayList<>();
+                roles.addAll(comanageConfiguration.getGroupRoles());
+                if (comanageGroup.getParentName() == null) {
+                    roles.add(DEFAULT_TOPLEVEL_ROLE);
+                }
+                configuration.setGroupRoles(roles);
+                if (comanageConfiguration.getAup() != null){
+                    if (configuration.getAup() == null)
+                        configuration.setAup(new GroupAupRepresentation());
+                    configuration.getAup().setType("URL");
+                    configuration.getAup().setUrl(comanageConfiguration.getAup().getUrl());
+                } else {
+                    configuration.setAup(null);
+                }
 
                 WebClient.builder()
-                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + CONFIGURATION)
+                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + existingGroups.get(0).getId() + CONFIGURATION)
                         .build()
                         .post()
-                        .header("Authorization", "Bearer " + token)
-                        .header("Content-Type", "application/json")
+                        .header(AUTHORIZATION, "Bearer " + token)
+                        .header(CONTENT_TYPE, APPLICATION_JSON)
                         .bodyValue(configuration).retrieve()
                         .toBodilessEntity()
                         .doOnSuccess(response -> {
-                            if (response.getStatusCode().is2xxSuccessful()) {
-                               configuration.setId(StringUtils.substringAfter(response.getHeaders().getLocation().toString(), "configuration/"));
-                            } else {
-                                logger.error("Failed to create group enrollment configuration with name {} for group {}: {}",
+                            if (!response.getStatusCode().is2xxSuccessful()) {
+                                logger.error("Failed to update group enrollment configuration with name {} for group {}: {}",
                                         configuration.getName(),
                                         comanageGroup.getName(),
                                         response.getBody());
-                                throw new RuntimeException("Problem creating group enrollment configuration");
+                                throw new RuntimeException("Problem updating group enrollment configuration");
                             }
                         })
                         .doOnError(error -> {
-                            logger.error("Failed to create group enrollment configuration with name {} for group {}: {}",
+                            logger.error("Failed to update group enrollment configuration with name {} for group {}: {}",
                                     configuration.getName(),
                                     comanageGroup.getName(),
                                     error.getMessage());
-                            throw new RuntimeException("Problem creating group enrollment configuration");
+                            throw new RuntimeException("Problem updating group enrollment configuration");
                         })
                         .block();
 
-                WebClient.builder()
-                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + DEFAULT_CONFIGURATION)
-                        .build()
-                        .post()
-                        .uri(uriBuilder -> uriBuilder
-                                .queryParam("configurationId", configuration.getId())
-                                .build())
-                        .header("Authorization", "Bearer " + token)
-                        .header("Content-Type", "application/json")
-                        .retrieve()
-                        .toBodilessEntity()
-                        .doOnSuccess(response -> {
-                            if (!response.getStatusCode().is2xxSuccessful()) {
-                                logger.error("Failed to create default group enrollment configuration for group {}: {}",
-                                        comanageGroup.getName(),
-                                        response.getBody());
-                                throw new RuntimeException("Problem creating role");
-                            }
-                        })
-                        .doOnError(error -> {
-                            logger.error("Failed to create default group enrollment configuration for group {}: {}",
-                                    comanageGroup.getName(),
-                                    error.getMessage());
-                            throw new RuntimeException("Problem creating role");
-                        })
-                        .block();
-
-
-            } catch (RuntimeException e) {
-                e.printStackTrace();
+                logger.info("Enrollment request with name {} for group with name {} together with all related entities has been updated",
+                        comanageConfiguration.getName(), comanageGroup.getName());
             }
+        } catch (Exception e) {
+            logger.error("Error processing group {}: {}", comanageGroup.getName(), e.getMessage());
+            e.printStackTrace();
         }
-
     }
 
     private String createGroup(String keycloakUrl, ComanageGroupRepresentation comanageGroup, String token) {
@@ -279,7 +356,7 @@ public class KeycloakAdminService {
         groupRepresentation.setName(comanageGroup.getName());
         String parentId = null;
         if (comanageGroup.getParentName() != null) {
-            List<GroupRepresentation> existingGroups = getGroupByName(keycloakUrl, comanageGroup.getParentName(), token);
+            List<GroupRepresentation> existingGroups = getGroupByName(keycloakUrl, comanageGroup.getParentName(), token, true);
             if (!existingGroups.isEmpty()) {
                 parentId = existingGroups.get(0).getId();
             } else {
@@ -291,14 +368,14 @@ public class KeycloakAdminService {
             groupRepresentation.setAttributes(Map.of("description", Stream.of(comanageGroup.getDescription()).toList()));
         }
 
-        String url = parentId == null ? keycloakUrl.replace("/realms", "/admin/realms") + GROUPS : keycloakUrl.replace("/realms", "/admin/realms") + GROUPS + "/" + parentId + CHILDREN;
+        String url = parentId == null ? keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS : keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS + "/" + parentId + CHILDREN;
 
         WebClient.builder()
                 .baseUrl(url)
                 .build()
                 .post()
-                .header("Authorization", "Bearer " + token)
-                .header("Content-Type", "application/json")
+                .header(AUTHORIZATION, "Bearer " + token)
+                .header(CONTENT_TYPE, APPLICATION_JSON)
                 .bodyValue(groupRepresentation).retrieve()
                 .toBodilessEntity()
                 .doOnSuccess(response -> {
@@ -323,16 +400,17 @@ public class KeycloakAdminService {
         return groupRepresentation.getId();
     }
 
-    private List<GroupRepresentation> getGroupByName(String keycloakUrl, String name, String token) {
+    private List<GroupRepresentation> getGroupByName(String keycloakUrl, String name, String token, boolean briefRepresentation) {
         return WebClient.builder()
-                .baseUrl(keycloakUrl.replace("/realms", "/admin/realms") + GROUPS)
+                .baseUrl(keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS)
                 .build()
                 .get()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam("search", name)
                         .queryParam("exact", true)
+                        .queryParam("briefRepresentation", briefRepresentation)
                         .build())
-                .header("Authorization", "Bearer " + token)
+                .header(AUTHORIZATION, "Bearer " + token)
                 .retrieve().bodyToMono(new ParameterizedTypeReference<List<GroupRepresentation>>() {
                 })
                 .block();
