@@ -5,17 +5,21 @@ import org.apache.commons.lang3.StringUtils;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.rciam.keycloak.comanage_migration.comanage.ComanageGroupRepresentation;
+import org.rciam.keycloak.comanage_migration.comanage.ComanageUserGroupMembership;
 import org.rciam.keycloak.comanage_migration.comanage.ComanageUserRepresentation;
 import org.rciam.keycloak.comanage_migration.common.ConvertFromComanageToKeycloak;
 import org.rciam.keycloak.comanage_migration.config.KeycloakConfig;
 import org.rciam.keycloak.comanage_migration.dtos.GroupAupRepresentation;
 import org.rciam.keycloak.comanage_migration.dtos.GroupEnrollmentConfigurationRepresentation;
+import org.rciam.keycloak.comanage_migration.dtos.UserGroupMembershipExtensionRepresentation;
+import org.rciam.keycloak.comanage_migration.dtos.UserGroupMembershipExtensionRepresentationPager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.rciam.keycloak.comanage_migration.common.Utils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -45,8 +49,10 @@ public class KeycloakAdminService {
     private static final String GROUP_ADMIN_URL = "/agm/account/group-admin/group/";
     private static final String ROLES = "/roles";
     private static final String CONFIGURATION = "/configuration";
+    private static final String MEMBERS = "/members";
+    private static final String MEMBER = "/member/{memberId}";
+    private static final String SUSPENSION = "/suspend";
     private static final String DEFAULT_CONFIGURATION = "/default-configuration";
-    private static final String DEFAULT_TOPLEVEL_ROLE = "vm_operator";
     public static final String DEFAULT_CONFIGURATION_NAME = "defaultConfiguration";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -75,20 +81,7 @@ public class KeycloakAdminService {
         try {
             keycloakUrl = keycloakUrl.replace(REALMS, ADMIN_REALMS);
             // First check if user exists
-            List<UserRepresentation> existingUsers = WebClient.builder()
-                    .baseUrl(keycloakUrl + USERS)
-                    .build()
-                    .get()
-                    .uri(uriBuilder -> uriBuilder
-                            .queryParam("username", comanageUser.getUsername())
-                            .queryParam("exact", true)
-                            .build())
-                    .header(AUTHORIZATION, "Bearer " + token)
-                    .retrieve().bodyToMono(new ParameterizedTypeReference<List<UserRepresentation>>() {
-                    })
-                    .block();
-
-
+            List<UserRepresentation> existingUsers = getUserByUsername(keycloakUrl, comanageUser.getUsername(), token);
             UserRepresentation user = existingUsers != null && !existingUsers.isEmpty() ? existingUsers.get(0) : new UserRepresentation();
             converter.convertUser(comanageUser, user);
 
@@ -185,38 +178,11 @@ public class KeycloakAdminService {
                     }
 
                     if (comanageGroup.getParentName() == null) {
-                        roles.add(DEFAULT_TOPLEVEL_ROLE);
+                        roles.add(Utils.DEFAULT_TOPLEVEL_ROLE);
                     }
                     configuration.setGroupRoles(roles);
 
-                    roles.stream().forEach(role ->
-                        WebClient.builder()
-                                .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + ROLES)
-                                .build()
-                                .post()
-                                .uri(uriBuilder -> uriBuilder
-                                        .queryParam("name", role)
-                                        .build())
-                                .header(AUTHORIZATION, "Bearer " + token)
-                                .header(CONTENT_TYPE, APPLICATION_JSON)
-                                .retrieve()
-                                .toBodilessEntity()
-                                .doOnSuccess(response -> {
-                                    if (!response.getStatusCode().is2xxSuccessful()) {
-                                        logger.error("Failed to create group role with name {}: {}",
-                                                role,
-                                                response.getBody());
-                                        throw new RuntimeException("Problem creating role");
-                                    }
-                                })
-                                .doOnError(error -> {
-                                    logger.error("Failed to create group role with name {}: {}",
-                                            role,
-                                            error.getMessage());
-                                    throw new RuntimeException("Problem creating role");
-                                })
-                                .block()
-                    );
+                    roles.stream().forEach(role ->createGroupRole(keycloakUrl, groupId, role, token));
 
                     WebClient.builder()
                             .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + CONFIGURATION)
@@ -304,7 +270,7 @@ public class KeycloakAdminService {
                 List<String> roles = new ArrayList<>();
                 roles.addAll(comanageConfiguration.getGroupRoles());
                 if (comanageGroup.getParentName() == null) {
-                    roles.add(DEFAULT_TOPLEVEL_ROLE);
+                    roles.add(Utils.DEFAULT_TOPLEVEL_ROLE);
                 }
                 configuration.setGroupRoles(roles);
                 if (comanageConfiguration.getAup() != null){
@@ -400,6 +366,211 @@ public class KeycloakAdminService {
         return groupRepresentation.getId();
     }
 
+    public void processGroupAdminsFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
+        String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
+
+        List<ComanageUserGroupMembership> groupAdmins = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageUserGroupMembership.class));
+
+        groupAdmins.stream().forEach(groupAdmin -> createGroupAdmin(keycloakUrl, groupAdmin.getUsername(), groupAdmin.getGroupName(), token));
+    }
+
+    private void createGroupAdmin(String keycloakUrl, String username, String groupName, String token) {
+
+        try {
+            List<UserRepresentation> users = getUserByUsername(keycloakUrl.replace(REALMS, ADMIN_REALMS), username, token);
+
+            if (users == null || users.isEmpty()) {
+                throw new RuntimeException(String.format("User with username %s does not exist.", username));
+            }
+
+            // Retrieve group by group name with brief representation
+            List<GroupRepresentation> groups = getGroupByName(keycloakUrl, groupName, token, true);
+            if (groups.isEmpty()) {
+                throw new RuntimeException(String.format("Group with name %s does not exist.", groupName));
+            }
+
+            // Create group admin
+            WebClient.builder()
+                    .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groups.get(0).getId() + "/admin")
+                    .build()
+                    .post()
+                    .uri(uriBuilder -> uriBuilder.queryParam("username", username).build())
+                    .header(AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .doOnSuccess(response -> {
+                        if (response.getStatusCode().is2xxSuccessful()) {
+                            logger.info("Group admin for user {} in group {} has been created",
+                                    username, groupName);
+                        } else {
+                            logger.warn("Failed to create group admin for user {} in group {}: {}",
+                                    username, groupName, response.getBody());
+                        }
+                    })
+                    .doOnError(error -> {
+                        logger.error("Failed to create group admin for user {} in group {}: {}",
+                                username, groupName, error.getMessage());
+                        throw new RuntimeException("Problem creating group admin");
+                    })
+                    .block();
+
+        } catch (Exception e) {
+            logger.error("Failed to create group admin for user {} in group {}: {}",
+                    username, groupName, e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public void processGroupMembersFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
+        String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
+
+        List<ComanageUserGroupMembership> groupAdmins = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageUserGroupMembership.class));
+
+        groupAdmins.stream().forEach(comanageMember -> createGroupMembers(keycloakUrl, comanageMember, token));
+    }
+
+    private void createGroupMembers(String keycloakUrl, ComanageUserGroupMembership comanageMember, String token) {
+
+        try {
+            List<UserRepresentation> users = getUserByUsername(keycloakUrl.replace(REALMS, ADMIN_REALMS), comanageMember.getUsername(), token);
+
+            if (users == null || users.isEmpty()) {
+                throw new RuntimeException(String.format("User with username %s for the group %s does not exist.", comanageMember.getUsername(), comanageMember.getGroupName()));
+            }
+
+            // Retrieve group by group name with brief representation
+            List<GroupRepresentation> groups = getGroupByName(keycloakUrl, comanageMember.getGroupName(), token, true);
+            if (groups.isEmpty()) {
+                throw new RuntimeException(String.format("Group with name %s does not exist.", comanageMember.getGroupName()));
+            }
+            GroupRepresentation group = groups.get(0);
+
+            List<String> existingRoles = WebClient.builder()
+                    .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + ROLES)
+                    .build()
+                    .get()
+                    .header(AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<List<String>>() {})
+                    .block();
+            List<String> newRoles = new ArrayList<>(); // for adding possible new roles
+
+            UserGroupMembershipExtensionRepresentationPager memberPager = WebClient.builder()
+                    .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + MEMBERS)
+                    .build()
+                    .get()
+                    .uri(uriBuilder -> uriBuilder
+                            .queryParam("search", comanageMember.getUsername())
+                            .build())
+                    .header(AUTHORIZATION, "Bearer " + token)
+                    .retrieve().bodyToMono(UserGroupMembershipExtensionRepresentationPager.class)
+                    .block();
+
+            UserGroupMembershipExtensionRepresentation member = converter.convertMember(comanageMember, group.getId(), group.getPath().split("/").length == 1, newRoles, existingRoles);
+            newRoles.stream().forEach(role -> createGroupRole(keycloakUrl, group.getId(), role, token));
+            if (memberPager.getCount() == 0) {
+
+                WebClient.builder()
+                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + MEMBERS)
+                        .build()
+                        .post()
+                        .header(AUTHORIZATION, "Bearer " + token)
+                        .header(CONTENT_TYPE, APPLICATION_JSON)
+                        .bodyValue(member).retrieve()
+                        .toBodilessEntity()
+                        .doOnSuccess(response -> {
+                            if (response.getStatusCode().is2xxSuccessful()) {
+                                logger.info("User group membership of the group {} and user {} has been created successfully",
+                                        group.getName(),
+                                        comanageMember.getUsername());
+                                member.setId(StringUtils.substringAfter(response.getHeaders().getLocation().toString(), "member/"));
+                            } else {
+                                logger.error("Failed to create user group membership of the group {} and user {}: {}",
+                                        group.getName(),
+                                        comanageMember.getUsername(),
+                                        response.getBody());
+                                throw new RuntimeException("Problem creating group membership");
+                            }
+                        })
+                        .doOnError(error -> {
+                            logger.error("Failed to create user group membership of the group {} and user {}: {}",
+                                    group.getName(),
+                                    comanageMember.getUsername(),
+                                    error.getMessage());
+                            throw new RuntimeException("Problem creating group membership");
+                        })
+                        .block();
+
+                if ("SUSPENDED".equals(comanageMember.getStatus())) {
+                    suspendMember(keycloakUrl, token, group, comanageMember.getUsername(), member.getId());
+                }
+            } else {
+
+                UserGroupMembershipExtensionRepresentation oldMember = memberPager.getResults().get(0);
+                boolean isChanged = false;
+                if (member.getValidFrom().isBefore(oldMember.getValidFrom())){
+                    oldMember.setValidFrom(member.getValidFrom());
+                    isChanged = true;
+                }
+                if (oldMember.getMembershipExpiresAt() != null && ( member.getMembershipExpiresAt() == null || ( member.getMembershipExpiresAt()!= null && member.getMembershipExpiresAt().isAfter(oldMember.getMembershipExpiresAt())))){
+                    oldMember.setMembershipExpiresAt(member.getMembershipExpiresAt());
+                    isChanged = true;
+                }
+                for ( String role: member.getGroupRoles()) {
+                    if (!oldMember.getGroupRoles().contains(role)) {
+                        oldMember.getGroupRoles().add(role);
+                        isChanged = true;
+                    }
+                }
+                if (isChanged){
+                    WebClient.builder()
+                            .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() +  MEMBER.replace("{memberId}", oldMember.getId()))
+                            .build()
+                            .put()
+                            .header(AUTHORIZATION, "Bearer " + token)
+                            .header(CONTENT_TYPE, APPLICATION_JSON)
+                            .bodyValue(oldMember).retrieve()
+                            .toBodilessEntity()
+                            .doOnSuccess(response -> {
+                                if (response.getStatusCode().is2xxSuccessful()) {
+                                    logger.info("User group membership of the group {} and user {} has been updated successfully",
+                                            group.getName(),
+                                            comanageMember.getUsername());
+                                } else {
+                                    logger.error("Failed to update user group membership of the group {} and user {}: {}",
+                                            group.getName(),
+                                            comanageMember.getUsername(),
+                                            response.getBody());
+                                    throw new RuntimeException("Problem creating group membership");
+                                }
+                            })
+                            .doOnError(error -> {
+                                logger.error("Failed to update user group membership of the group {} and user {}: {}",
+                                        group.getName(),
+                                        comanageMember.getUsername(),
+                                        error.getMessage());
+                                throw new RuntimeException("Problem creating group membership");
+                            })
+                            .block();
+                }
+
+                if ("SUSPENDED".equals(comanageMember.getStatus()) && !"SUSPENDED".equals(oldMember.getStatus())) {
+                    suspendMember(keycloakUrl, token, group, comanageMember.getUsername(), oldMember.getId());
+                }
+            }
+
+
+        } catch (Exception e) {
+            logger.error("Failed to create user group membership for the group {} and user {}: {}",
+                    comanageMember.getGroupName(),
+                    comanageMember.getUsername(), e.getMessage());
+            e.printStackTrace();
+        }
+
+    }
+
     private List<GroupRepresentation> getGroupByName(String keycloakUrl, String name, String token, boolean briefRepresentation) {
         return WebClient.builder()
                 .baseUrl(keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS)
@@ -412,6 +583,76 @@ public class KeycloakAdminService {
                         .build())
                 .header(AUTHORIZATION, "Bearer " + token)
                 .retrieve().bodyToMono(new ParameterizedTypeReference<List<GroupRepresentation>>() {
+                })
+                .block();
+    }
+
+    private List<UserRepresentation> getUserByUsername(String keycloakUrl, String username, String token) {
+        return WebClient.builder()
+                .baseUrl(keycloakUrl + USERS)
+                .build()
+                .get()
+                .uri(uriBuilder -> uriBuilder
+                        .queryParam("username", username)
+                        .queryParam("exact", true)
+                        .build())
+                .header(AUTHORIZATION, "Bearer " + token)
+                .retrieve().bodyToMono(new ParameterizedTypeReference<List<UserRepresentation>>() {
+                })
+                .block();
+    }
+
+    private void createGroupRole(String keycloakUrl, String groupId, String role, String token){
+        WebClient.builder()
+                .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupId + ROLES)
+                .build()
+                .post()
+                .uri(uriBuilder -> uriBuilder
+                        .queryParam("name", role)
+                        .build())
+                .header(AUTHORIZATION, "Bearer " + token)
+                .header(CONTENT_TYPE, APPLICATION_JSON)
+                .retrieve()
+                .toBodilessEntity()
+                .doOnSuccess(response -> {
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        logger.error("Failed to create group role with name {}: {}",
+                                role,
+                                response.getBody());
+                        throw new RuntimeException("Problem creating role");
+                    }
+                })
+                .doOnError(error -> {
+                    logger.error("Failed to create group role with name {}: {}",
+                            role,
+                            error.getMessage());
+                    throw new RuntimeException("Problem creating role");
+                })
+                .block();
+    }
+
+    private void suspendMember(String keycloakUrl, String token, GroupRepresentation group, String username, String memberId){
+        WebClient.builder()
+                .baseUrl(keycloakUrl + GROUP_ADMIN_URL +  group.getId() + MEMBER.replace("{memberId}", memberId) + SUSPENSION)
+                .build()
+                .post()
+                .header(AUTHORIZATION, "Bearer " + token).retrieve()
+                .toBodilessEntity()
+                .doOnSuccess(response -> {
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        logger.error("Failed to suspend user {} in the group {}: {}",
+                                username,
+                                group.getName(),
+                                response.getBody());
+                        throw new RuntimeException("Problem suspending group member");
+                    }
+                })
+                .doOnError(error -> {
+                    logger.error("Failed to suspend user {} in the group {}: {}",
+                            username,
+                            group.getName(),
+                            error.getMessage());
+                    throw new RuntimeException("Problem suspending group member");
                 })
                 .block();
     }

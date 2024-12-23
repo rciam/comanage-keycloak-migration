@@ -44,5 +44,30 @@ public class MigrationCommands {
                 clientId != null ? clientId : keycloakConfig.getClientId(),
                 clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
     }
+
+
+    @ShellMethod("Create group admins in Keycloak from JSON file")
+    public void createGroupAdmins(
+            @ShellOption (defaultValue = ShellOption.NULL, help = "Keycloak admin REST API") String keycloakUrl,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientId for getting token with clients credentials") String clientId,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientSecret for getting token with clients credentials") String clientSecret,
+            @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
+
+        keycloakAdminService.processGroupAdminsFromFile(jsonFilePath, keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl(),
+                clientId != null ? clientId : keycloakConfig.getClientId(),
+                clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
+    }
+
+    @ShellMethod("Create user group members in Keycloak from JSON file")
+    public void createGroupMembers(
+            @ShellOption (defaultValue = ShellOption.NULL, help = "Keycloak admin REST API") String keycloakUrl,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientId for getting token with clients credentials") String clientId,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientSecret for getting token with clients credentials") String clientSecret,
+            @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
+
+        keycloakAdminService.processGroupMembersFromFile(jsonFilePath, keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl(),
+                clientId != null ? clientId : keycloakConfig.getClientId(),
+                clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
+    }
 }
 

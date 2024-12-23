@@ -1,9 +1,13 @@
 package org.rciam.keycloak.comanage_migration.common;
 
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.rciam.keycloak.comanage_migration.comanage.ComanageUserGroupMembership;
 import org.rciam.keycloak.comanage_migration.comanage.ComanageUserRepresentation;
 import org.rciam.keycloak.comanage_migration.config.KeycloakConfig;
+import org.rciam.keycloak.comanage_migration.dtos.GroupEnrollmentConfigurationRepresentation;
+import org.rciam.keycloak.comanage_migration.dtos.UserGroupMembershipExtensionRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,6 +80,34 @@ public class ConvertFromComanageToKeycloak {
         });
 
         user.getFederatedIdentities().addAll(uniqueIdentities.values());
+    }
+
+    public UserGroupMembershipExtensionRepresentation convertMember(ComanageUserGroupMembership comanageMember, String groupId, boolean toplevel, List<String> newRoles, List<String> existingRoles) {
+        UserGroupMembershipExtensionRepresentation member = new UserGroupMembershipExtensionRepresentation();
+        UserRepresentation user = new UserRepresentation();
+        user.setUsername(comanageMember.getUsername());
+        member.setUser(user);
+        member.setValidFrom(comanageMember.getValidFrom().toLocalDate());
+        member.setMembershipExpiresAt(comanageMember.getMembershipExpiresAt() == null ? null : comanageMember.getMembershipExpiresAt().toLocalDate());
+        List<String> groupRoles = new ArrayList<>();
+        groupRoles.add(comanageMember.getGroupRole());
+        if (!"member".equals(comanageMember.getGroupRole())) {
+            groupRoles.add("member");
+            if (!existingRoles.contains(comanageMember.getGroupRole()))
+                newRoles.add(comanageMember.getGroupRole());
+        }
+        if (!"".equals(comanageMember.getTitle())) {
+            groupRoles.add("member");
+            if (!existingRoles.contains(comanageMember.getTitle()))
+                newRoles.add(comanageMember.getTitle());
+        }
+        if (toplevel) {
+            groupRoles.add(Utils.DEFAULT_TOPLEVEL_ROLE);
+        }
+        member.setGroupRoles(groupRoles);
+
+        return member;
+
     }
 
     private String convertIdPAlias(String comanageAlias) {
