@@ -468,7 +468,7 @@ public class KeycloakAdminService {
                     .retrieve().bodyToMono(UserGroupMembershipExtensionRepresentationPager.class)
                     .block();
 
-            UserGroupMembershipExtensionRepresentation member = converter.convertMember(comanageMember, group.getId(), group.getPath().split("/").length == 1, newRoles, existingRoles);
+            UserGroupMembershipExtensionRepresentation member = converter.convertMember(comanageMember, group.getPath().split("/").length == 2, newRoles, existingRoles);
             newRoles.stream().forEach(role -> createGroupRole(keycloakUrl, group.getId(), role, token));
             if (memberPager.getCount() == 0) {
 

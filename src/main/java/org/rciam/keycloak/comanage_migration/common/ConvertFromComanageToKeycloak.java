@@ -82,7 +82,7 @@ public class ConvertFromComanageToKeycloak {
         user.getFederatedIdentities().addAll(uniqueIdentities.values());
     }
 
-    public UserGroupMembershipExtensionRepresentation convertMember(ComanageUserGroupMembership comanageMember, String groupId, boolean toplevel, List<String> newRoles, List<String> existingRoles) {
+    public UserGroupMembershipExtensionRepresentation convertMember(ComanageUserGroupMembership comanageMember, boolean toplevel, List<String> newRoles, List<String> existingRoles) {
         UserGroupMembershipExtensionRepresentation member = new UserGroupMembershipExtensionRepresentation();
         UserRepresentation user = new UserRepresentation();
         user.setUsername(comanageMember.getUsername());
