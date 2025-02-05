@@ -69,5 +69,17 @@ public class MigrationCommands {
                 clientId != null ? clientId : keycloakConfig.getClientId(),
                 clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
     }
+
+    @ShellMethod("Create Perun groups and related configuration in Keycloak from JSON file")
+    public void createPerunGroups(
+            @ShellOption (defaultValue = ShellOption.NULL, help = "Keycloak admin REST API") String keycloakUrl,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientId for getting token with clients credentials") String clientId,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "clientSecret for getting token with clients credentials") String clientSecret,
+            @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
+
+        keycloakAdminService.processPerunGroupsFromFile(jsonFilePath, keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl(),
+                clientId != null ? clientId : keycloakConfig.getClientId(),
+                clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
+    }
 }
 

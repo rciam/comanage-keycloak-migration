@@ -2,7 +2,6 @@ package org.rciam.keycloak.comanage_migration.dtos;
 
 public class GroupAupRepresentation {
 
-    private String id;
     private String type;
     private String mimeType;
     private Object content;
@@ -10,14 +9,6 @@ public class GroupAupRepresentation {
     private String url;
 
     public GroupAupRepresentation(){}
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
 
     public String getType() {
         return type;

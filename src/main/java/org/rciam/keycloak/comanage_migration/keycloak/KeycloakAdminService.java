@@ -11,6 +11,7 @@ import org.rciam.keycloak.comanage_migration.common.ConvertFromComanageToKeycloa
 import org.rciam.keycloak.comanage_migration.config.KeycloakConfig;
 import org.rciam.keycloak.comanage_migration.dtos.GroupAupRepresentation;
 import org.rciam.keycloak.comanage_migration.dtos.GroupEnrollmentConfigurationRepresentation;
+import org.rciam.keycloak.comanage_migration.dtos.GroupsPager;
 import org.rciam.keycloak.comanage_migration.dtos.UserGroupMembershipExtensionRepresentation;
 import org.rciam.keycloak.comanage_migration.dtos.UserGroupMembershipExtensionRepresentationPager;
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -46,6 +48,7 @@ public class KeycloakAdminService {
     private static final String USERS = "/users";
     private static final String GROUPS = "/groups";
     private static final String CHILDREN = "/children";
+    private static final String GROUPS_ADMIN_URL = "/agm/account/group-admin/groups";
     private static final String GROUP_ADMIN_URL = "/agm/account/group-admin/group/";
     private static final String ROLES = "/roles";
     private static final String CONFIGURATION = "/configuration";
@@ -54,6 +57,10 @@ public class KeycloakAdminService {
     private static final String SUSPENSION = "/suspend";
     private static final String DEFAULT_CONFIGURATION = "/default-configuration";
     public static final String DEFAULT_CONFIGURATION_NAME = "defaultConfiguration";
+    private static final String MEMBER_ROLE = "member";
+    private static final String DESCRIPTION = "description";
+    private static final String PERUN_AUP = "https://aai.egi.eu/aup/{0}.html";
+    private static final List<String> EXCLUDE_GROUPS = Stream.of("vo.clarin.eu","vo.nbis.se","vo.nextgeoss.eu").toList();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -144,10 +151,11 @@ public class KeycloakAdminService {
 
     }
 
+
     private void createGroupAndEnrollment(String keycloakUrl, ComanageGroupRepresentation comanageGroup, String token) {
-        List<GroupRepresentation> existingGroups = getGroupByName(keycloakUrl, comanageGroup.getName(), token, false);
+        GroupsPager existingGroups = getGroupByName(keycloakUrl, comanageGroup.getName(), token, false);
         try {
-            if (existingGroups.isEmpty()) {
+            if (existingGroups.getCount() == 0) {
                     String groupId = createGroup(keycloakUrl, comanageGroup, token);
 
                     //create group role and default enrollment configuration
@@ -162,7 +170,7 @@ public class KeycloakAdminService {
                         configuration.setActive(Boolean.TRUE);
                         configuration.setVisibleToNotMembers(Boolean.FALSE);
                         configuration.setMultiselectRole(Boolean.TRUE);
-                        roles.addAll(Stream.of("member").toList());
+                        roles.addAll(Stream.of(MEMBER_ROLE).toList());
                         configuration.setCommentsNeeded(Boolean.TRUE);
                         configuration.setCommentsLabel("Comments");
                         configuration.setCommentsDescription("Why do you want to join the group?");
@@ -244,11 +252,12 @@ public class KeycloakAdminService {
 
             } else if (comanageGroup.getEnrollmentConfigurationList() != null && !comanageGroup.getEnrollmentConfigurationList().isEmpty()) {
                 //try to default update enrollment configuration
+                GroupRepresentation groupRep = existingGroups.getResults().get(0);
 
-                String configurationId = existingGroups.get(0).getAttributes().get(DEFAULT_CONFIGURATION_NAME).get(0);
+                String configurationId = groupRep.getAttributes().get(DEFAULT_CONFIGURATION_NAME).get(0);
 
                 GroupEnrollmentConfigurationRepresentation configuration = WebClient.builder()
-                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + existingGroups.get(0).getId() + CONFIGURATION + "/" + configurationId)
+                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupRep.getId() + CONFIGURATION + "/" + configurationId)
                         .build()
                         .get()
                         .header(AUTHORIZATION, "Bearer " + token)
@@ -283,7 +292,7 @@ public class KeycloakAdminService {
                 }
 
                 WebClient.builder()
-                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + existingGroups.get(0).getId() + CONFIGURATION)
+                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupRep.getId() + CONFIGURATION)
                         .build()
                         .post()
                         .header(AUTHORIZATION, "Bearer " + token)
@@ -322,16 +331,16 @@ public class KeycloakAdminService {
         groupRepresentation.setName(comanageGroup.getName());
         String parentId = null;
         if (comanageGroup.getParentName() != null) {
-            List<GroupRepresentation> existingGroups = getGroupByName(keycloakUrl, comanageGroup.getParentName(), token, true);
-            if (!existingGroups.isEmpty()) {
-                parentId = existingGroups.get(0).getId();
+            GroupsPager existingGroups = getGroupByName(keycloakUrl, comanageGroup.getParentName(), token, true);
+            if (existingGroups.getCount() > 0) {
+                parentId = existingGroups.getResults().get(0).getId();
             } else {
                 logger.error("Group with name {} and parent group with name {} could not be created. Parent group does not exist.", comanageGroup.getName(), comanageGroup.getDescription());
                 throw new RuntimeException("Parent group does not exist");
             }
         }
         if (comanageGroup.getDescription() != null) {
-            groupRepresentation.setAttributes(Map.of("description", Stream.of(comanageGroup.getDescription()).toList()));
+            groupRepresentation.setAttributes(Map.of(DESCRIPTION, Stream.of(comanageGroup.getDescription()).toList()));
         }
 
         String url = parentId == null ? keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS : keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS + "/" + parentId + CHILDREN;
@@ -366,6 +375,161 @@ public class KeycloakAdminService {
         return groupRepresentation.getId();
     }
 
+
+    public void processPerunGroupsFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
+        String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
+
+        List<ComanageGroupRepresentation> comanageGroups = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)),
+                objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageGroupRepresentation.class));
+
+        comanageGroups.stream().forEach(comanageGroup -> createPerunGroupAndEnrollment(keycloakUrl, comanageGroup, token));
+
+    }
+
+    private void createPerunGroupAndEnrollment(String keycloakUrl, ComanageGroupRepresentation comanageGroup, String token) {
+        String[] groupsNameArray = comanageGroup.getName().split(":");
+        if (EXCLUDE_GROUPS.contains(groupsNameArray[0])) {
+            logger.warn("Perun group with name {} will not be created due to being comanage group",
+            comanageGroup.getName());
+            return;
+        }
+        GroupsPager parentGroups = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 2], token, false);
+        if (parentGroups.getCount() > 1 || (parentGroups.getCount() == 0 && groupsNameArray.length > 2) ) {
+            logger.warn("PERUN group with name {} can not be created because {}", comanageGroup.getName(),parentGroups.getCount()> 1 ? "parent group is not unique" : "no top level parent group does not exist");
+            return;
+        }
+        try {
+            String parentId = parentGroups.getCount() == 0 ? createPerunGroup(keycloakUrl, groupsNameArray[groupsNameArray.length - 2], null, null, token) : parentGroups.getResults().get(0).getId();
+            createPerunGroup(keycloakUrl, groupsNameArray[groupsNameArray.length - 1], comanageGroup.getDescription(), parentId, token);
+            logger.info("Perun group with name {} together with all related entities has been created",
+                        comanageGroup.getName());
+
+        } catch (Exception e) {
+            logger.error("Error processing group {}: {}", comanageGroup.getName(), e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private String createPerunGroup(String keycloakUrl, String name, String description, String parentId, String token) {
+        boolean toplevel = parentId == null;
+        GroupRepresentation groupRepresentation = new GroupRepresentation();
+        groupRepresentation.setName(name);
+        groupRepresentation.setAttributes(new HashMap<>());
+        groupRepresentation.getAttributes().put("PERUN", Stream.of("true").toList());
+        if (description != null) {
+            groupRepresentation.getAttributes().put(DESCRIPTION, Stream.of(description).toList());
+        }
+
+        String url = toplevel ? keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS : keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS + "/" + parentId + CHILDREN;
+
+        WebClient.builder()
+                .baseUrl(url)
+                .build()
+                .post()
+                .header(AUTHORIZATION, "Bearer " + token)
+                .header(CONTENT_TYPE, APPLICATION_JSON)
+                .bodyValue(groupRepresentation).retrieve()
+                .toBodilessEntity()
+                .doOnSuccess(response -> {
+                    if (response.getStatusCode().is2xxSuccessful()) {
+                        logger.info("Group with name {} has successfully created.",
+                                groupRepresentation.getName());
+                        groupRepresentation.setId(StringUtils.substringAfter(response.getHeaders().getLocation().toString(), "groups/"));
+                    } else {
+                        logger.error("Failed to create group with name {}: {}",
+                                groupRepresentation.getName(),
+                                response.getBody());
+                        throw new RuntimeException("Problem creating group");
+                    }
+                })
+                .doOnError(error -> {
+                    logger.error("Failed to create group with name {}: {}",
+                            groupRepresentation.getName(),
+                            error.getMessage());
+                    throw new RuntimeException("Problem creating group");
+                })
+                .block();
+
+        //create group role and default enrollment configuration
+        List<String> roles = Stream.of(MEMBER_ROLE).toList();
+        createGroupRole(keycloakUrl, groupRepresentation.getId(), MEMBER_ROLE, token);
+        GroupEnrollmentConfigurationRepresentation configuration = new GroupEnrollmentConfigurationRepresentation();
+        configuration.setName("Join " + name);
+        configuration.setRequireApproval(Boolean.TRUE);
+        configuration.setRequireApprovalForExtension(Boolean.TRUE);
+        configuration.setActive(Boolean.TRUE);
+        configuration.setVisibleToNotMembers(Boolean.FALSE);
+        configuration.setMultiselectRole(Boolean.FALSE);
+        configuration.setGroupRoles(roles);
+        configuration.setCommentsNeeded(Boolean.FALSE);
+        if (toplevel) {
+            configuration.setMembershipExpirationDays(Long.valueOf(365));
+            GroupAupRepresentation aup = new GroupAupRepresentation();
+            aup.setType("URL");
+            aup.setUrl(PERUN_AUP.replace("{0}", name));
+            configuration.setAup(aup);
+        }
+        configuration.setGroupRoles(roles);
+
+        WebClient.builder()
+                .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupRepresentation.getId() + CONFIGURATION)
+                .build()
+                .post()
+                .header(AUTHORIZATION, "Bearer " + token)
+                .header(CONTENT_TYPE, APPLICATION_JSON)
+                .bodyValue(configuration).retrieve()
+                .toBodilessEntity()
+                .doOnSuccess(response -> {
+                    if (response.getStatusCode().is2xxSuccessful()) {
+                        configuration.setId(StringUtils.substringAfter(response.getHeaders().getLocation().toString(), "configuration/"));
+                    } else {
+                        logger.error("Failed to create group enrollment configuration with name {} for group {}: {}",
+                                configuration.getName(),
+                                name,
+                                response.getBody());
+                        throw new RuntimeException("Problem creating group enrollment configuration");
+                    }
+                })
+                .doOnError(error -> {
+                    logger.error("Failed to create group enrollment configuration with name {} for group {}: {}",
+                            configuration.getName(),
+                            name,
+                            error.getMessage());
+                    throw new RuntimeException("Problem creating group enrollment configuration");
+                })
+                .block();
+
+        WebClient.builder()
+                .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groupRepresentation.getId() + DEFAULT_CONFIGURATION)
+                .build()
+                .post()
+                .uri(uriBuilder -> uriBuilder
+                        .queryParam("configurationId", configuration.getId())
+                        .build())
+                .header(AUTHORIZATION, "Bearer " + token)
+                .header(CONTENT_TYPE, APPLICATION_JSON)
+                .retrieve()
+                .toBodilessEntity()
+                .doOnSuccess(response -> {
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        logger.error("Failed to create default group enrollment configuration for group {}: {}",
+                                name,
+                                response.getBody());
+                        throw new RuntimeException("Problem adding default group enrollment configuration");
+                    }
+                })
+                .doOnError(error -> {
+                    logger.error("Failed to create default group enrollment configuration for group {}: {}",
+                            name,
+                            error.getMessage());
+                    throw new RuntimeException("Problem adding default group enrollment configuration");
+                })
+                .block();
+
+        return groupRepresentation.getId();
+    }
+
+
     public void processGroupAdminsFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
         String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
 
@@ -385,14 +549,14 @@ public class KeycloakAdminService {
             }
 
             // Retrieve group by group name with brief representation
-            List<GroupRepresentation> groups = getGroupByName(keycloakUrl, groupName, token, true);
-            if (groups.isEmpty()) {
+            GroupsPager groups = getGroupByName(keycloakUrl, groupName, token, true);
+            if (groups.getCount() == 0) {
                 throw new RuntimeException(String.format("Group with name %s does not exist.", groupName));
             }
 
             // Create group admin
             WebClient.builder()
-                    .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groups.get(0).getId() + "/admin")
+                    .baseUrl(keycloakUrl + GROUP_ADMIN_URL + groups.getResults().get(0).getId() + "/admin")
                     .build()
                     .post()
                     .uri(uriBuilder -> uriBuilder.queryParam("username", username).build())
@@ -441,11 +605,11 @@ public class KeycloakAdminService {
             }
 
             // Retrieve group by group name with brief representation
-            List<GroupRepresentation> groups = getGroupByName(keycloakUrl, comanageMember.getGroupName(), token, true);
-            if (groups.isEmpty()) {
+            GroupsPager groups = getGroupByName(keycloakUrl, comanageMember.getGroupName(), token, true);
+            if (groups.getCount() == 0) {
                 throw new RuntimeException(String.format("Group with name %s does not exist.", comanageMember.getGroupName()));
             }
-            GroupRepresentation group = groups.get(0);
+            GroupRepresentation group = groups.getResults().get(0);
 
             List<String> existingRoles = WebClient.builder()
                     .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + ROLES)
@@ -571,19 +735,17 @@ public class KeycloakAdminService {
 
     }
 
-    private List<GroupRepresentation> getGroupByName(String keycloakUrl, String name, String token, boolean briefRepresentation) {
+    private GroupsPager getGroupByName(String keycloakUrl, String name, String token, boolean briefRepresentation) {
         return WebClient.builder()
-                .baseUrl(keycloakUrl.replace(REALMS, ADMIN_REALMS) + GROUPS)
+                .baseUrl(keycloakUrl+ GROUPS_ADMIN_URL)
                 .build()
                 .get()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam("search", name)
-                        .queryParam("exact", true)
-                        .queryParam("briefRepresentation", briefRepresentation)
+                        .queryParam("toplevel", false)
                         .build())
                 .header(AUTHORIZATION, "Bearer " + token)
-                .retrieve().bodyToMono(new ParameterizedTypeReference<List<GroupRepresentation>>() {
-                })
+                .retrieve().bodyToMono(GroupsPager.class)
                 .block();
     }
 
