@@ -51,7 +51,7 @@ public class ConvertFromComanageToKeycloak {
             user.setAttributes(new HashMap<>());
         }
         user.getAttributes().put("uid", Stream.of(comanageUser.getUid()).toList());
-        user.getAttributes().put("terms_and_conditions", Stream.of(String.valueOf(comanageUser.getTerms_and_conditions().toInstant(ZoneOffset.UTC).toEpochMilli())).toList());
+        user.getAttributes().put("terms_and_conditions", Stream.of(String.valueOf(comanageUser.getTerms_and_conditions().toInstant(ZoneOffset.UTC).toEpochMilli()/ 1000)).toList());
 
         if (comanageUser.getSshPublicKeys() != null && comanageUser.getSshPublicKeys().isEmpty())
             user.getAttributes().put("sshKeys", comanageUser.getSshPublicKeys());
