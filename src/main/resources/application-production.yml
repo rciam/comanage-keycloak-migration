@@ -1,3 +1,6 @@
 keycloak:
   url: https://aai.egi.eu/auth/realms/id
-  client-secret: x
+  client-secret: BtwPKTixcEwLwmQo2bjuzdfK01zPPHzo
+
+logging.file:
+  name: C:/old_E/production/egi-prod-comanage-migration.log
