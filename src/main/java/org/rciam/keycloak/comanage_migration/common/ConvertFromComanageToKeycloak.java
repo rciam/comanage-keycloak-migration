@@ -97,7 +97,7 @@ public class ConvertFromComanageToKeycloak {
                 newRoles.add(comanageMember.getGroupRole());
         }
         if (!"".equals(comanageMember.getTitle())) {
-            groupRoles.add("member");
+            groupRoles.add(comanageMember.getTitle());
             if (!existingRoles.contains(comanageMember.getTitle()))
                 newRoles.add(comanageMember.getTitle());
         }
