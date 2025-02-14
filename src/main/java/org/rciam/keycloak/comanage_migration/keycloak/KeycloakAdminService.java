@@ -659,11 +659,9 @@ public class KeycloakAdminService {
                     oldMember.setMembershipExpiresAt(member.getMembershipExpiresAt());
                     isChanged = true;
                 }
-                for ( String role: member.getGroupRoles()) {
-                    if (!oldMember.getGroupRoles().contains(role)) {
-                        oldMember.getGroupRoles().add(role);
-                        isChanged = true;
-                    }
+                if (!oldMember.getGroupRoles().equals(member.getGroupRoles())) {
+                    oldMember.setGroupRoles(member.getGroupRoles());
+                    isChanged = true;
                 }
                 if (isChanged){
                     WebClient.builder()
