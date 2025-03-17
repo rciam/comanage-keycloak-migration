@@ -67,11 +67,12 @@ public class ConvertFromComanageToKeycloak {
         comanageUser.getFederatedIdentities().forEach(x -> {
             String keycloakAlias = convertIdPAlias(x.getIdentityProvider());
             if (keycloakAlias != null && !existingIdentities.contains(keycloakAlias)) {
+                String originalProvider = x.getIdentityProvider();
                 x.setIdentityProvider(keycloakAlias);
-                if (uniqueIdentities.containsKey(x.getIdentityProvider())) {
-                    logger.warn("{} has duplicate connection with Identity Provider: {}. Only one will be kept.", comanageUser.getUsername(), x.getIdentityProvider());
+                if (uniqueIdentities.containsKey(originalProvider)) {
+                    logger.warn("{} has duplicate connection with Identity Provider: {}. Only one will be kept.", comanageUser.getUsername(), originalProvider);
                 } else {
-                    uniqueIdentities.put(x.getIdentityProvider(), x);
+                    uniqueIdentities.put(originalProvider, x);
                 }
             } else if (keycloakAlias == null) {
                 logger.warn("User with username {} : federated identity with comanage {} identifier does not exist in Keycloak.",

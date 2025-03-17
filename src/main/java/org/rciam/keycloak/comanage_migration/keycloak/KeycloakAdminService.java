@@ -821,6 +821,7 @@ public class KeycloakAdminService {
                     }
                 })
                 .doOnError(error -> {
+                    error.printStackTrace();
                     logger.error("Failed to create user group membership of the group {} and user {}: {}",
                             groupPath,
                             username,
