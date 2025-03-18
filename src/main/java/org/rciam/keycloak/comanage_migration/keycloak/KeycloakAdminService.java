@@ -68,6 +68,7 @@ public class KeycloakAdminService {
     private static final List<String> EXCLUDE_GROUPS = Stream.of("vo.clarin.eu","vo.nbis.se","vo.nextgeoss.eu").toList();
     private static final List<String> memberRole= Stream.of("member").toList();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final List<String> excludedGroups = Stream.of("vo.nextgeoss.eu").toList();
 
     @Autowired
     public KeycloakAdminService(org.rciam.keycloak.comanage_migration.keycloak.KeycloakTokenService tokenService, ConvertFromComanageToKeycloak converter, KeycloakConfig keycloakConfig) {
@@ -152,7 +153,7 @@ public class KeycloakAdminService {
         List<ComanageGroupRepresentation> comanageGroups = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageGroupRepresentation.class));
 
-        comanageGroups.stream().forEach(comanageGroup -> createGroupAndEnrollment(keycloakUrl, comanageGroup, token));
+        comanageGroups.stream().filter(comanageGroup -> !excludedGroups.contains(comanageGroup.getName())).forEach(comanageGroup -> createGroupAndEnrollment(keycloakUrl, comanageGroup, token));
 
 
     }
@@ -542,7 +543,7 @@ public class KeycloakAdminService {
         List<ComanageUserGroupMembership> groupAdmins = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageUserGroupMembership.class));
 
-        groupAdmins.stream().forEach(groupAdmin -> createGroupAdmin(keycloakUrl, groupAdmin.getUsername(), groupAdmin.getGroupName(), token));
+        groupAdmins.stream().filter(groupAdmin -> !excludedGroups.contains(groupAdmin.getGroupName())).forEach(groupAdmin -> createGroupAdmin(keycloakUrl, groupAdmin.getUsername(), groupAdmin.getGroupName(), token));
     }
 
     private void createGroupAdmin(String keycloakUrl, String username, String groupName, String token) {
@@ -598,7 +599,7 @@ public class KeycloakAdminService {
         List<ComanageUserGroupMembership> groupAdmins = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageUserGroupMembership.class));
 
-        groupAdmins.stream().forEach(comanageMember -> createGroupMembers(keycloakUrl, comanageMember, token));
+        groupAdmins.stream().filter(comanageMember -> !excludedGroups.contains(comanageMember.getGroupName())).forEach(comanageMember -> createGroupMembers(keycloakUrl, comanageMember, token));
     }
 
     private void createGroupMembers(String keycloakUrl, ComanageUserGroupMembership comanageMember, String token) {
