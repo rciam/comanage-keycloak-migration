@@ -1,12 +1,10 @@
 package org.rciam.keycloak.comanage_migration.common;
 
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
-import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.rciam.keycloak.comanage_migration.comanage.ComanageUserGroupMembership;
 import org.rciam.keycloak.comanage_migration.comanage.ComanageUserRepresentation;
 import org.rciam.keycloak.comanage_migration.config.KeycloakConfig;
-import org.rciam.keycloak.comanage_migration.dtos.GroupEnrollmentConfigurationRepresentation;
 import org.rciam.keycloak.comanage_migration.dtos.UserGroupMembershipExtensionRepresentation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +51,7 @@ public class ConvertFromComanageToKeycloak {
         user.getAttributes().put("uid", Stream.of(comanageUser.getUid()).toList());
         user.getAttributes().put("terms_and_conditions", Stream.of(String.valueOf(comanageUser.getTerms_and_conditions().toInstant(ZoneOffset.UTC).toEpochMilli()/ 1000)).toList());
 
-        if (comanageUser.getSshPublicKeys() != null && comanageUser.getSshPublicKeys().isEmpty())
+        if (comanageUser.getSshPublicKeys() != null && !comanageUser.getSshPublicKeys().isEmpty())
             user.getAttributes().put("sshKeys", comanageUser.getSshPublicKeys());
 
         if (user.getFederatedIdentities() == null) {

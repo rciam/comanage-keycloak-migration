@@ -93,5 +93,12 @@ public class MigrationCommands {
                 clientId != null ? clientId : keycloakConfig.getClientId(),
                 clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
     }
+
+    @ShellMethod("Create Perun top level user group members in Keycloak from JSON file")
+    public void createPerunExtraMembers(
+            @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
+
+        keycloakAdminService.processPerunGroupMembersExtraFromFile(jsonFilePath, keycloakConfig.getUrl(), keycloakConfig.getClientId(), keycloakConfig.getClientSecret());
+    }
 }
 

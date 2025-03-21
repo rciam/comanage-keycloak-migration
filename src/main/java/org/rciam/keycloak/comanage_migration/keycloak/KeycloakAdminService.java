@@ -58,6 +58,7 @@ public class KeycloakAdminService {
     private static final String ROLES = "/roles";
     private static final String CONFIGURATION = "/configuration";
     private static final String MEMBERS = "/members";
+    private static final String MEMBERS2 = ":members";
     private static final String MEMBER = "/member/{memberId}";
     private static final String SUSPENSION = "/suspend";
     private static final String DEFAULT_CONFIGURATION = "/default-configuration";
@@ -65,7 +66,8 @@ public class KeycloakAdminService {
     private static final String MEMBER_ROLE = "member";
     private static final String DESCRIPTION = "description";
     private static final String PERUN_AUP = "https://aai.egi.eu/aup/{0}.html";
-    private static final List<String> EXCLUDE_GROUPS = Stream.of("vo.clarin.eu","vo.nbis.se","vo.nextgeoss.eu").toList();
+    private static final String SEMI_COLON = ":";
+    private static final List<String> EXCLUDE_GROUPS = Stream.of("vo.clarin.eu","vo.nbis.se").toList();
     private static final List<String> memberRole= Stream.of("member").toList();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final List<String> excludedGroups = Stream.of("vo.nextgeoss.eu").toList();
@@ -84,7 +86,7 @@ public class KeycloakAdminService {
                 objectMapper.getTypeFactory().constructCollectionType(List.class, ComanageUserRepresentation.class));
 
         comanageUsers.stream()
-                .filter(user -> ( user.getFederatedIdentities() == null ||
+                .filter(user -> user.getSshPublicKeys() != null && !user.getSshPublicKeys().isEmpty() && ( user.getFederatedIdentities() == null ||
                         user.getFederatedIdentities().stream()
                                 .noneMatch(identity -> keycloakConfig.getExcludedAlias().contains(identity.getIdentityProvider())) && user.getTerms_and_conditions() != null)
                 ).forEach(comanangeUser -> createUpdateUser(keycloakUrl, comanangeUser, token));
@@ -160,7 +162,7 @@ public class KeycloakAdminService {
 
 
     private void createGroupAndEnrollment(String keycloakUrl, ComanageGroupRepresentation comanageGroup, String token) {
-        GroupsPager existingGroups = getGroupByName(keycloakUrl, comanageGroup.getName(), token);
+        GroupsPager existingGroups = getGroupByName(keycloakUrl, comanageGroup.getName(), token, false);
         try {
             if (existingGroups.getCount() == 0) {
                     String groupId = createGroup(keycloakUrl, comanageGroup, token);
@@ -338,7 +340,7 @@ public class KeycloakAdminService {
         groupRepresentation.setName(comanageGroup.getName());
         String parentId = null;
         if (comanageGroup.getParentName() != null) {
-            GroupsPager existingGroups = getGroupByName(keycloakUrl, comanageGroup.getParentName(), token);
+            GroupsPager existingGroups = getGroupByName(keycloakUrl, comanageGroup.getParentName(), token, false);
             if (existingGroups.getCount() > 0) {
                 parentId = existingGroups.getResults().get(0).getId();
             } else {
@@ -394,13 +396,13 @@ public class KeycloakAdminService {
     }
 
     private void createPerunGroupAndEnrollment(String keycloakUrl, ComanageGroupRepresentation comanageGroup, String token) {
-        String[] groupsNameArray = comanageGroup.getName().split(":");
+        String[] groupsNameArray = comanageGroup.getName().split(SEMI_COLON);
         if (EXCLUDE_GROUPS.contains(groupsNameArray[0])) {
             logger.warn("Perun group with name {} will not be created due to being comanage group",
             comanageGroup.getName());
             return;
         }
-        GroupsPager parentGroups = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 2], token);
+        GroupsPager parentGroups = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 2], token, false);
         if (parentGroups.getCount() > 1 || (parentGroups.getCount() == 0 && groupsNameArray.length > 2) ) {
             logger.warn("PERUN group with name {} can not be created because {}", comanageGroup.getName(),parentGroups.getCount()> 1 ? "parent group is not unique" : "no top level parent group does not exist");
             return;
@@ -556,7 +558,7 @@ public class KeycloakAdminService {
             }
 
             // Retrieve group by group name with brief representation
-            GroupsPager groups = getGroupByName(keycloakUrl, groupName, token);
+            GroupsPager groups = getGroupByName(keycloakUrl, groupName, token, false);
             if (groups.getCount() == 0) {
                 throw new RuntimeException(String.format("Group with name %s does not exist.", groupName));
             }
@@ -612,7 +614,7 @@ public class KeycloakAdminService {
             }
 
             // Retrieve group by group name with brief representation
-            GroupsPager groups = getGroupByName(keycloakUrl, comanageMember.getGroupName(), token);
+            GroupsPager groups = getGroupByName(keycloakUrl, comanageMember.getGroupName(), token, false);
             if (groups.getCount() == 0) {
                 throw new RuntimeException(String.format("Group with name %s does not exist.", comanageMember.getGroupName()));
             }
@@ -720,6 +722,15 @@ public class KeycloakAdminService {
                 .forEach(entry -> createPerunGroupMembers(keycloakUrl, entry.getKey(), entry.getValue().getGroups(), token));
     }
 
+    public void processPerunGroupMembersExtraFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
+        String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
+
+        Map<String, PerunUserGroupMembershipRepresentation>  perunMembers = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)), PerunUsersMemberships.class).getUsers();
+        perunMembers.entrySet().stream()
+                .filter(entry -> !entry.getValue().getGroups().isEmpty())
+                .forEach(entry -> createPerunTopLevelGroupMembers(keycloakUrl, entry.getKey(), entry.getValue().getGroups(), token));
+    }
+
     private void createPerunGroupMembers(String keycloakUrl, String username, List<String> groups, String token) {
 
         List<UserRepresentation> users = getUserByUsername(keycloakUrl.replace(REALMS, ADMIN_REALMS), username, token);
@@ -730,11 +741,11 @@ public class KeycloakAdminService {
         }
 
         groups.stream().forEach(groupPath -> {
-            String[] groupsNameArray = groupPath.split(":");
+            String[] groupsNameArray = groupPath.split(SEMI_COLON);
             if (!EXCLUDE_GROUPS.contains(groupsNameArray[0])) {
                 try {
-                    String groupPathKeycloak = "/" + groupPath.replace(":","/");
-                    GroupsPager groupPager = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 1], token);
+                    String groupPathKeycloak = "/" + groupPath.replace(SEMI_COLON,"/");
+                    GroupsPager groupPager = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 1], token, false);
                     Optional<GroupRepresentation> group = groupPager.getResults().stream().filter(gr -> groupPathKeycloak.equals(gr.getPath())).findAny();
                     if (group.isEmpty()) {
                         logger.warn(String.format("Group with path %s does not exist.", groupPath));
@@ -756,7 +767,7 @@ public class KeycloakAdminService {
 
                        if ("members".equals(group.get().getName())){
                            UserGroupMembershipExtensionRepresentation memberParent = new UserGroupMembershipExtensionRepresentation();
-                           GroupsPager parentGroupPager = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 2], token);
+                           GroupsPager parentGroupPager = getGroupByName(keycloakUrl, groupsNameArray[groupsNameArray.length - 2], token, false);
                            UserGroupMembershipExtensionRepresentationPager memberParentPager = WebClient.builder()
                                    .baseUrl(keycloakUrl + GROUP_ADMIN_URL + parentGroupPager.getResults().get(0).getId() + MEMBERS)
                                    .build()
@@ -787,6 +798,60 @@ public class KeycloakAdminService {
                                groupPath,
                                username);
                    }
+
+                } catch (Exception e) {
+                    logger.error("Failed to create user group membership for the group {} and user {}: {}",
+                            groupPath,
+                            username, e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    private void createPerunTopLevelGroupMembers(String keycloakUrl, String username, List<String> groups, String token) {
+
+        List<UserRepresentation> users = getUserByUsername(keycloakUrl.replace(REALMS, ADMIN_REALMS), username, token);
+
+        if (users == null || users.isEmpty()) {
+            logger.error("User with username {} for the groups {} does not exist.", username, groups.stream().collect(Collectors.joining(",")));
+            return;
+        }
+
+        groups.stream().filter(groupPath -> groupPath.endsWith(MEMBERS2) && StringUtils.countMatches(groupPath, SEMI_COLON) == 1 ).forEach(groupPath -> {
+            String[] groupsNameArray = groupPath.split(SEMI_COLON);
+            if (!EXCLUDE_GROUPS.contains(groupsNameArray[0])) {
+                try {
+                    GroupsPager groupPager = getGroupByName(keycloakUrl, groupsNameArray[0], token, false);
+                    if (groupPager.getCount() == 0) {
+                        logger.warn(String.format("Group with path %s does not exist.", groupPath));
+                        return;
+                    }
+                    GroupRepresentation group = groupPager.getResults().get(0);
+
+                    UserGroupMembershipExtensionRepresentationPager memberPager = WebClient.builder()
+                            .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + MEMBERS)
+                            .build()
+                            .get()
+                            .uri(uriBuilder -> uriBuilder
+                                    .queryParam("search", username)
+                                    .build())
+                            .header(AUTHORIZATION, "Bearer " + token)
+                            .retrieve().bodyToMono(UserGroupMembershipExtensionRepresentationPager.class)
+                            .block();
+
+                    if (memberPager.getCount() == 0) {
+
+                        UserGroupMembershipExtensionRepresentation member = new UserGroupMembershipExtensionRepresentation();
+                        member.setUser(users.get(0));
+                        member.setGroupRoles(memberRole);
+                       // member.setValidFrom(LocalDate.now().minusDays(1));
+                        createMember(keycloakUrl, token, group.getPath(), username, group.getId(), member);
+                    } else {
+                        logger.info("User group membership of the group {} and user {} exists",
+                                groupPath,
+                                username);
+                    }
 
                 } catch (Exception e) {
                     logger.error("Failed to create user group membership for the group {} and user {}: {}",
@@ -832,14 +897,14 @@ public class KeycloakAdminService {
                 .block();
     }
 
-    private GroupsPager getGroupByName(String keycloakUrl, String name, String token) {
+    private GroupsPager getGroupByName(String keycloakUrl, String name, String token, boolean toplevel) {
         return WebClient.builder()
                 .baseUrl(keycloakUrl+ GROUPS_ADMIN_URL)
                 .build()
                 .get()
                 .uri(uriBuilder -> uriBuilder
                         .queryParam("search", name)
-                        .queryParam("toplevel", false)
+                        .queryParam("toplevel", toplevel)
                         .queryParam("exact", true)
                         .queryParam("max", 50)
                         .build())
