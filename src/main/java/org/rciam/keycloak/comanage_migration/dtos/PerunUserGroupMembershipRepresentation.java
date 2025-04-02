@@ -4,18 +4,19 @@ import java.util.List;
 
 public class PerunUserGroupMembershipRepresentation {
 
-    private String userid;
+    private String perunUserId;
     private String name;
+    private PerunUserAttributes attributes;
     private List<String> groups;
 
     public PerunUserGroupMembershipRepresentation (){}
 
-    public String getUserid() {
-        return userid;
+    public String getPerunUserId() {
+        return perunUserId;
     }
 
-    public void setUserid(String userid) {
-        this.userid = userid;
+    public void setPerunUserId(String perunUserId) {
+        this.perunUserId = perunUserId;
     }
 
     public String getName() {
@@ -32,5 +33,13 @@ public class PerunUserGroupMembershipRepresentation {
 
     public void setGroups(List<String> groups) {
         this.groups = groups;
+    }
+
+    public PerunUserAttributes getAttributes() {
+        return attributes;
+    }
+
+    public void setAttributes(PerunUserAttributes attributes) {
+        this.attributes = attributes;
     }
 }

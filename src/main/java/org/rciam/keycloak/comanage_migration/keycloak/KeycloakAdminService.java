@@ -1,5 +1,6 @@
 package org.rciam.keycloak.comanage_migration.keycloak;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
 import org.keycloak.representations.idm.GroupRepresentation;
@@ -713,13 +714,12 @@ public class KeycloakAdminService {
 
     }
 
-    public void processPerunGroupMembersFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
+    public void processPerunGroupMembersFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret, List<String> allowedGroups) throws IOException {
         String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
-
-        Map<String, PerunUserGroupMembershipRepresentation>  perunMembers = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)), PerunUsersMemberships.class).getUsers();
-        perunMembers.entrySet().stream()
-                .filter(entry -> !entry.getValue().getGroups().isEmpty())
-                .forEach(entry -> createPerunGroupMembers(keycloakUrl, entry.getKey(), entry.getValue().getGroups(), token));
+        List<PerunUserGroupMembershipRepresentation>  perunMembers = objectMapper.readValue(Files.readAllBytes(Path.of(jsonFilePath)), new TypeReference<List<PerunUserGroupMembershipRepresentation>>() {});
+        perunMembers.stream().filter(user -> !user.getGroups().isEmpty())
+                .forEach(user -> user.getAttributes().getEduPersonPrincipalNames()
+                        .forEach( username -> createPerunGroupMembers(keycloakUrl, username, user.getGroups(), token)));
     }
 
     public void processPerunGroupMembersExtraFromFile(String jsonFilePath, String keycloakUrl, String clientId, String clientSecret) throws IOException {
@@ -785,7 +785,7 @@ public class KeycloakAdminService {
                                memberParent.setGroupRoles(memberRole);
                                memberParent.setMembershipExpiresAt(LocalDate.now().plusYears(1));
 
-                               createMember(keycloakUrl, token, parentGroup.getPath(), username, group.get().getId(), memberParent);
+                               createMember(keycloakUrl, token, parentGroup.getPath(), username, parentGroup.getId(), memberParent);
                            }
                        }
 

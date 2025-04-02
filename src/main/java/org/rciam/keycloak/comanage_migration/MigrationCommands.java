@@ -8,6 +8,9 @@ import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 @ShellComponent
 public class MigrationCommands {
@@ -87,11 +90,12 @@ public class MigrationCommands {
             @ShellOption (defaultValue = ShellOption.NULL, help = "Keycloak admin REST API") String keycloakUrl,
             @ShellOption (defaultValue = ShellOption.NULL, help = "clientId for getting token with clients credentials") String clientId,
             @ShellOption (defaultValue = ShellOption.NULL, help = "clientSecret for getting token with clients credentials") String clientSecret,
-            @ShellOption (help = "COmanage json file") String jsonFilePath) throws IOException {
+            @ShellOption (help = "COmanage json file") String jsonFilePath,
+            @ShellOption (defaultValue = ShellOption.NULL, help = "comma seperated list of allowed parent groups") String allowedGroups) throws IOException {
 
         keycloakAdminService.processPerunGroupMembersFromFile(jsonFilePath, keycloakUrl != null ? keycloakUrl : keycloakConfig.getUrl(),
                 clientId != null ? clientId : keycloakConfig.getClientId(),
-                clientSecret != null ? clientSecret : keycloakConfig.getClientSecret());
+                clientSecret != null ? clientSecret : keycloakConfig.getClientSecret(), allowedGroups == null ? new ArrayList<>() : Arrays.asList(allowedGroups.split(",")));
     }
 
     @ShellMethod("Create Perun top level user group members in Keycloak from JSON file")
