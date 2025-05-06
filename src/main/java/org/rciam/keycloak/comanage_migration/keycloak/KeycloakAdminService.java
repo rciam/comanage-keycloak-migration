@@ -731,6 +731,54 @@ public class KeycloakAdminService {
                 .forEach(entry -> createPerunTopLevelGroupMembers(keycloakUrl, entry.getKey(), entry.getValue().getGroups(), token));
     }
 
+    public void processDeletePerunMembers(String perunVO, String keycloakUrl, String clientId, String clientSecret) throws IOException {
+        String token = tokenService.getToken(keycloakUrl, clientId, clientSecret);
+
+        GroupsPager voGroups = getGroupByName(keycloakUrl, perunVO, token, false);
+        if (voGroups.getCount() > 0 ) {
+            GroupRepresentation vo = voGroups.getResults().get(0);
+            deleteMembers (keycloakUrl, token, vo, true);
+            deleteMembers (keycloakUrl, token, vo, false);
+        }
+    }
+
+    private void deleteMembers (String keycloakUrl, String token, GroupRepresentation group, boolean direct) {
+        WebClient.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + MEMBERS)
+                .build()
+                .get()
+                .uri(uriBuilder -> uriBuilder
+                        .queryParam("max", 10000)
+                        .queryParam("direct", direct)
+                        .build())
+                .header(AUTHORIZATION, "Bearer " + token)
+                .retrieve().bodyToMono(UserGroupMembershipExtensionRepresentationPager.class)
+                .block().getResults().stream().forEach(member -> WebClient.builder()
+                        .baseUrl(keycloakUrl + GROUP_ADMIN_URL + group.getId() + MEMBER.replace("{memberId}", member.getId()))
+                        .build()
+                        .delete()
+                        .header(AUTHORIZATION, "Bearer " + token).retrieve()
+                        .toBodilessEntity()
+                        .doOnSuccess(response -> {
+                            if (!response.getStatusCode().is2xxSuccessful()) {
+                                logger.error("Failed to delete membership {} in the group {}: {}",
+                                        member.getUser().getUsername(),
+                                        member.getGroup().getName(),
+                                        response.getBody());
+                                throw new RuntimeException("Problem deleting group member");
+                            }
+                        })
+                        .doOnError(error -> {
+                            logger.error("Failed to delete membership {} in the group {}: {}",
+                                    member.getUser().getUsername(),
+                                    member.getGroup().getName(),
+                                    error.getMessage());
+                            throw new RuntimeException("Problem deleting group member");
+                        })
+                        .block());
+    }
+
     private void createPerunGroupMembers(String keycloakUrl, String username, List<String> groups, String token) {
 
         List<UserRepresentation> users = getUserByUsername(keycloakUrl.replace(REALMS, ADMIN_REALMS), username, token);

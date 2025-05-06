@@ -104,5 +104,12 @@ public class MigrationCommands {
 
         keycloakAdminService.processPerunGroupMembersExtraFromFile(jsonFilePath, keycloakConfig.getUrl(), keycloakConfig.getClientId(), keycloakConfig.getClientSecret());
     }
+
+    @ShellMethod("Delete all memberships of Perun top level group and its subgroups")
+    public void deletePerunMembers(
+            @ShellOption (defaultValue = "eiscat.se", help = "Perun VO") String perunVO) throws IOException {
+
+        keycloakAdminService.processDeletePerunMembers(perunVO, keycloakConfig.getUrl(), keycloakConfig.getClientId(), keycloakConfig.getClientSecret());
+    }
 }
 
